@@ -1,11 +1,13 @@
-// api/ingest.js
+// api/ingest.js  — light, controllable ingester
 const crypto = require('crypto');
 const { supabaseRW } = require('../lib/db');
 
-const SITE_BASE = process.env.SITE_BASE || "https://www.megaska.com";
+const SITE_BASE = process.env.SITE_BASE || "https://megaska.com";
 const TOKEN = process.env.INGEST_TOKEN || "";
 
+// ---------- small helpers ----------
 function sha(s){ return crypto.createHash("sha256").update(s).digest("hex"); }
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
 function htmlToText(html) {
   return html
@@ -25,61 +27,6 @@ function chunk(text, max = 1200) {
   return out;
 }
 
-async function getSitemapUrls(base) {
-  // Normalize host (treat www and non-www the same)
-  const baseUrl = new URL(base);
-  const baseHost = baseUrl.hostname.replace(/^www\./, '');
-
-  async function fetchText(u) {
-    const r = await fetch(u);
-    return r.ok ? r.text() : "";
-  }
-  function extractLocs(xmlText) {
-    return [...xmlText.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
-  }
-
-  // 1) Fetch the root sitemap
-  const rootText = await fetchText(`${baseUrl.origin}/sitemap.xml`);
-  if (!rootText) return [];
-
-  // 2) If it's a sitemap index, follow each child sitemap; otherwise use the root <loc> list
-  let candidates = [];
-  const rootLocs = extractLocs(rootText);
-  if (/<sitemapindex[\s>]/i.test(rootText)) {
-    for (const smUrl of rootLocs) {
-      try {
-        const txt = await fetchText(smUrl);
-        if (txt) candidates.push(...extractLocs(txt));
-      } catch {}
-    }
-  } else {
-    candidates = rootLocs;
-  }
-
-  // 3) Keep only URLs on our domain (ignore www) and allowed paths
-  const wanted = new Set();
-  for (const u of candidates) {
-    try {
-      const url = new URL(u);
-      const host = url.hostname.replace(/^www\./, '');
-      if (host !== baseHost) continue;
-
-      const p = url.pathname;
-      if (
-        p.startsWith('/pages/') ||
-        p.startsWith('/policies/') ||
-        p.startsWith('/blogs/') ||
-        p.startsWith('/collections/') ||
-        p.startsWith('/products/')
-      ) {
-        wanted.add(url.toString());
-      }
-    } catch {}
-  }
-  return Array.from(wanted);
-}
-
-
 async function embedBatch(texts) {
   const r = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
@@ -91,42 +38,136 @@ async function embedBatch(texts) {
   return j.data.map(d => d.embedding);
 }
 
-module.exports = async (req, res) => {
-  if (req.method === "OPTIONS") {
-    res.setHeader("Access-Control-Allow-Origin", "https://megaska.com");
-    res.setHeader("Access-Control-Allow-Headers", "content-type");
-    res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
-    return res.status(204).end();
+// ---------- sitemap utilities (with controls) ----------
+async function fetchText(u) {
+  const r = await fetch(u, { headers: { "User-Agent": "megaska-ingest" } });
+  return r.ok ? r.text() : "";
+}
+function extractLocs(xmlText) {
+  return [...xmlText.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
+}
+
+function normalizeHost(h){ return h.replace(/^www\./,''); }
+
+function allowedPath(path, allowPrefixes) {
+  return allowPrefixes.some(p => path.startsWith(p));
+}
+
+async function listAllUrls(base, allowPrefixes) {
+  const baseUrl = new URL(base);
+  const baseHost = normalizeHost(baseUrl.hostname);
+
+  const root = await fetchText(`${baseUrl.origin}/sitemap.xml`);
+  if (!root) return [];
+
+  let candidates = [];
+  const rootLocs = extractLocs(root);
+
+  if (/<sitemapindex[\s>]/i.test(root)) {
+    // Follow each child sitemap
+    for (const smUrl of rootLocs) {
+      try {
+        const txt = await fetchText(smUrl);
+        if (txt) candidates.push(...extractLocs(txt));
+      } catch {}
+    }
+  } else {
+    candidates = rootLocs;
   }
-  // Protect ingestion
+
+  // filter by host + allowed prefixes
+  const set = new Set();
+  for (const u of candidates) {
+    try {
+      const uu = new URL(u);
+      if (normalizeHost(uu.hostname) !== baseHost) continue;
+      if (!allowedPath(uu.pathname, allowPrefixes)) continue;
+      set.add(uu.toString());
+    } catch {}
+  }
+  return Array.from(set);
+}
+
+// ---------- main handler ----------
+module.exports = async (req, res) => {
+  // CORS (not strictly needed)
+  res.setHeader("Access-Control-Allow-Origin", "https://megaska.com");
+  res.setHeader("Access-Control-Allow-Headers", "content-type");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  if (req.method === "OPTIONS") return res.status(204).end();
+
   if (!TOKEN || req.query.token !== TOKEN) return res.status(401).send("Unauthorized");
 
   try {
-    const urls = await getSitemapUrls(SITE_BASE);
-    let totalChunks = 0;
+    // Controls from query
+    // only=pages,policies,collections,products,blogs
+    const onlyParam = (req.query.only || "pages,policies").toString().toLowerCase();
+    const allowPrefixes = [];
+    if (onlyParam.includes("pages")) allowPrefixes.push("/pages/");
+    if (onlyParam.includes("policies")) allowPrefixes.push("/policies/");
+    if (onlyParam.includes("collections")) allowPrefixes.push("/collections/");
+    if (onlyParam.includes("products")) allowPrefixes.push("/products/");
+    if (onlyParam.includes("blogs")) allowPrefixes.push("/blogs/");
 
-    for (const url of urls) {
-      const html = await fetch(url, { headers: { "User-Agent": "megaska-ingest" }}).then(r=>r.text()).catch(()=> "");
-      if (!html) continue;
+    const limit = Math.max(1, Math.min( parseInt(req.query.limit || "20", 10) || 20, 50 ));
+    const offset = Math.max(0, parseInt(req.query.offset || "0", 10) || 0);
+
+    const singleUrl = req.query.url ? req.query.url.toString() : null;
+
+    let finalUrls = [];
+
+    if (singleUrl) {
+      finalUrls = [singleUrl];
+    } else {
+      const all = await listAllUrls(SITE_BASE, allowPrefixes);
+      // paginate to keep function fast/light
+      finalUrls = all.slice(offset, offset + limit);
+      // (Optional) always make sure critical pages are included at least once
+      const STATIC_URLS = [
+        `${SITE_BASE.replace(/\/$/,'')}/pages/size-guide`
+      ];
+      for (const u of STATIC_URLS) if (!finalUrls.includes(u)) finalUrls.push(u);
+    }
+
+    let totalChunks = 0;
+    let processed = 0;
+    let skipped = 0;
+
+    for (const url of finalUrls) {
+      // small delay to avoid overloading
+      await sleep(150);
+      let html = "";
+      try {
+        html = await fetchText(url);
+      } catch {
+        skipped++; 
+        continue;
+      }
+      if (!html) { skipped++; continue; }
+
       const title = (html.match(/<title>([^<]*)<\/title>/i)?.[1] || "").trim();
       const text = htmlToText(html);
-      const pieces = chunk(text);
+      if (!text) { skipped++; continue; }
 
-      // Embed in batches of 32
-      for (let i = 0; i < pieces.length; i += 32) {
-        const batch = pieces.slice(i, i + 32);
+      const pieces = chunk(text);
+      // embed in tiny batches to stay under limits
+      for (let i = 0; i < pieces.length; i += 16) {
+        const batch = pieces.slice(i, i + 16);
         const vecs = await embedBatch(batch);
         for (let j = 0; j < batch.length; j++) {
           const content = batch[j];
           const hash = sha(url + "|" + content);
-          await supabaseRW.from("docs").upsert({
-            url, title, content, hash, embedding: vecs[j]
-          }, { onConflict: "hash" });
+          await supabaseRW.from("docs").upsert(
+            { url, title, content, hash, embedding: vecs[j] },
+            { onConflict: "hash" }
+          );
           totalChunks++;
         }
       }
+      processed++;
     }
-    res.json({ ok: true, urls: urls.length, chunks: totalChunks });
+
+    res.json({ ok: true, urls: finalUrls.length, processed, skipped, chunks: totalChunks, limit, offset, only: allowPrefixes });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e) });
   }
