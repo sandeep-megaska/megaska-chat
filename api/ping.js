@@ -1,4 +1,6 @@
 module.exports = (req, res) => {
-  res.setHeader("Content-Type", "application/json");
-  res.status(200).send(JSON.stringify({ ok: true, time: Date.now() }));
+  const origin = req.headers.origin || req.headers.Origin || "*";
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
+  res.status(200).json({ ok: true, ts: Date.now() });
 };
