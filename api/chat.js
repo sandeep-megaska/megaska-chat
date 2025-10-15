@@ -8,6 +8,27 @@ function setCORS(res) {
   res.setHeader("Access-Control-Allow-Headers", "content-type");
   res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
 }
+// --- Canonical Megaska links (edit to match your site) ---
+const CANONICAL = {
+  home:       "https://megaska.com/",
+  about:      "https://megaska.com/pages/about-us",
+  refund:     "https://megaska.com/pages/returns-and-exchange-policy",
+  shipping:   "https://megaska.com/pages/shipping-policy",
+  privacy:    "https://megaska.com/pages/privacy-policy",
+  terms:      "https://megaska.com/pages/terms-and-conditions",
+  contact:    "https://megaska.com/pages/contact-us" // if exists
+};
+
+// Convert to a friendly block we can give the model
+function canonicalBlock() {
+  const lines = Object.entries(CANONICAL)
+    .map(([k, v]) => `- ${k}: ${v}`)
+    .join("\n");
+  return `Use ONLY these links when you include a URL. Do NOT invent new paths.\n${lines}`;
+}
+
+
+
 
 async function embed(text) {
   const r = await fetch("https://api.openai.com/v1/embeddings", {
@@ -30,12 +51,15 @@ async function retrieveTopK(query, k = 5) {
 
 function systemPrompt() {
   return `
-You are Megaska’s support assistant. Answer ONLY using the provided Context. 
-- If the answer isn't in Context, ask ONE brief clarifying question or say you’re not fully sure and point to footer links or WhatsApp +91 9650957372.
-- Do not invent URLs or policies. Use relative links when possible (e.g., /pages/size-guide).
-- Keep answers short, precise, friendly.
-  `;
+You are Megaska’s support assistant. Answer ONLY using the provided Context.
+- **Do not invent URLs or policies**. If you include a link, use the "Canonical Links" provided.
+- Prefer concise, friendly, precise answers. If not sure, say so and mention WhatsApp +91 9650957372.
+- India-only shipping. Do not mention Kuwait or other regions unless explicitly in Context.
+- When relevant, cite the policy name and include the canonical link.
+
+Output: plain text; keep it short.`;
 }
+
 
 module.exports = async (req, res) => {
   setCORS(res);
@@ -102,4 +126,13 @@ module.exports = async (req, res) => {
     res.write(`data: ${JSON.stringify({ output_text: "Sorry—temporary issue. Please WhatsApp +91 9650957372." })}\n\n`);
     res.end();
   }
+  const messages = [
+  { role: "system", content: systemPrompt() },
+  { role: "user", content: [
+      { type: "input_text", text: `User: ${message}` },
+      { type: "input_text", text: `Canonical Links:\n${canonicalBlock()}` },
+      { type: "input_text", text: `Context:\n${contextText}` } // whatever you already pass from RAG
+    ]}
+];
+
 };
