@@ -25,11 +25,29 @@ const supa = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPA
 
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
-async function* urlsFromSitemap(url) {
-  const xml = await (await fetch(url)).text();
-  const locs = [...xml.matchAll(/<loc>(.*?)<\/loc>/g)].map(m => m[1]);
-  for (const u of locs) yield u;
+async function* urlsFromSitemap(sitemapUrl, siteOrigin = SITE, seen = new Set()) {
+  if (seen.has(sitemapUrl)) return;
+  seen.add(sitemapUrl);
+
+  const xml = await (await fetch(sitemapUrl)).text();
+
+  // Collect all <loc> values
+  const locs = [...xml.matchAll(/<loc>(.*?)<\/loc>/g)].map(m => decodeXmlEntities(m[1].trim()));
+
+  for (const loc of locs) {
+    // If the <loc> itself is another sitemap (.xml), recurse into it
+    if (/\.(xml)(\?.*)?$/i.test(loc)) {
+      // stay on-site only
+      if (sameOrigin(loc, siteOrigin)) {
+        yield* urlsFromSitemap(loc, siteOrigin, seen);
+      }
+      continue;
+    }
+    // Yield only on-site page URLs (PDPs, collections, blogs, etc.)
+    if (sameOrigin(loc, siteOrigin)) yield loc;
+  }
 }
+
 
 function cleanHTML(html) {
   const dom = new JSDOM(html);
