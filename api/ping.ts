@@ -55,3 +55,24 @@ export default function handler(req: any, res: any) {
 
   res.status(200).json({ ok: true, ts: Date.now() });
 }
+export default async function handler(req, res) {
+  setCors(req, res);
+
+  if (req.method === "OPTIONS") { res.status(204).end(); return; }  // no body
+
+  if (req.method !== "POST") { res.status(405).json({ error: "Method Not Allowed" }); return; }
+
+  const { message, sessionId } = req.body || {};
+  if (!message || !sessionId) { res.status(400).json({ error: "Missing message or sessionId" }); return; }
+
+  // SSE headers for POST only:
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+
+  // ...stream chunks...
+  res.write(`data: ${JSON.stringify({ output_text: "Hello" })}\n\n`);
+  // finish
+  res.end();
+}
