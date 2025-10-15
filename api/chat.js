@@ -6,6 +6,7 @@ const ALLOWED_ORIGIN = const ALLOWED_ORIGINS = new Set([
   "https://megaska.com",
   "https://www.megaska.com",
   "https://megaska.myshopify.com",
+  
   "http://localhost:3000",
   "https://megaska-chat-1m8sm48km-sandeep-megaskas-projects.vercel.app/"
 ]);
