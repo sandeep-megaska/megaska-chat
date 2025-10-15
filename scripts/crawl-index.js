@@ -1,4 +1,16 @@
 // /scripts/crawl-index.js
+function decodeXmlEntities(str = "") {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+function sameOrigin(u, site) {
+  try { return new URL(u).origin === new URL(site).origin; } catch { return false; }
+}
+
 const fetch = require("node-fetch");
 const { JSDOM } = require("jsdom");
 const { createClient } = require("@supabase/supabase-js");
