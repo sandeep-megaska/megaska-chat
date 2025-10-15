@@ -1,4 +1,40 @@
 // pages/api/chat.ts
+
+import type { NextApiRequest, NextApiResponse } from "next";
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  setCors(req, res);
+
+  if (req.method === "OPTIONS") {
+    res.status(204).end();           // no body, no SSE headers
+    return;
+  }
+
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method Not Allowed" });
+    return;
+  }
+
+  const { message, sessionId } = (req.body || {}) as { message?: string; sessionId?: string };
+  if (!message || !sessionId) {
+    res.status(400).json({ error: "Missing message or sessionId" });
+    return;
+  }
+
+  // SSE headers ONLY for POST:
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  // @ts-ignore
+  res.flushHeaders?.();
+
+  const tick = (t: string) => res.write(`data: ${JSON.stringify({ output_text: t })}\n\n`);
+  ["Hello", "!", " How", " can", " I", " assist", " you", " today", "?"].forEach((t, i) =>
+    setTimeout(() => tick(t), 80 * i)
+  );
+  setTimeout(() => res.end(), 900);
+}
+
 import type { NextApiRequest, NextApiResponse } from "next";
 
 const ALLOWED = new Set([
