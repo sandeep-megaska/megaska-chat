@@ -1,3 +1,25 @@
+const ALLOWED = new Set([
+  "https://megaska.com",
+  "https://www.megaska.com",
+  "https://megaska.myshopify.com",
+  "http://localhost:3000",
+  "https://megaska-chat.vercel.app",
+]);
+
+function pickOrigin(req: any) {
+  const o = req.headers.origin || req.headers.Origin;
+  return o && ALLOWED.has(o) ? o : "https://www.megaska.com";
+}
+
+function setCors(req: any, res: any) {
+  const origin = pickOrigin(req);
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Credentials", "true");             // <-- add
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "content-type, authorization"); // <-- add auth
+  res.setHeader("Vary", "Origin");                                       // <-- add
+  return origin;
+}
 
 export default function handler(req: any, res: any) {
   setCors(req, res);
