@@ -2,7 +2,14 @@
 const { supabaseRO } = require('../lib/db');
 
 // CORS allow only your store
-const ALLOWED_ORIGIN = "https://megaska.com";
+const ALLOWED_ORIGIN = const ALLOWED_ORIGINS = new Set([
+  "https://megaska.com",
+  "https://www.megaska.com",
+  "https://megaska.myshopify.com",
+  "http://localhost:3000",
+  "https://megaska-chat-1m8sm48km-sandeep-megaskas-projects.vercel.app/"
+]);
+
 function setCORS(res) {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Headers", "content-type");
