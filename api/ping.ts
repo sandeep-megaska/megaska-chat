@@ -1,3 +1,11 @@
+
+export default function handler(req: any, res: any) {
+  setCors(req, res);
+  if (req.method === "OPTIONS") { res.status(204).end(); return; }
+  res.status(200).json({ ok: true, ts: Date.now() });
+}
+
+
 const ALLOWED = new Set([
   "https://megaska.com",
   "https://www.megaska.com",
