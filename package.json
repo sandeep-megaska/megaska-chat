@@ -6,3 +6,5 @@
     "@supabase/supabase-js": "^2.45.4"
   }
 }
+
+"scripts": { "crawl:index": "node scripts/crawl-index.js" }
