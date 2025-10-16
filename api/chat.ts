@@ -1,4 +1,22 @@
 // /api/chat.ts
+function dedupeByUrl(rows: any[], maxPerUrl = 1, maxTotal = 5) {
+  const seen = new Map<string, number>();
+  const out: any[] = [];
+  for (const r of rows) {
+    const url = String(r.url);
+    const c = seen.get(url) || 0;
+    if (c < maxPerUrl) {
+      out.push(r);
+      seen.set(url, c + 1);
+      if (out.length >= maxTotal) break;
+    }
+  }
+  return out;
+}
+
+
+
+
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
