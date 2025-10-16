@@ -14,6 +14,20 @@ function dedupeByUrl(rows: any[], maxPerUrl = 1, maxTotal = 5) {
   return out;
 }
 
+function decodeHTMLEntities(s = "") {
+  return s
+    .replace(/&ndash;/g, "–")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+// When building contextBlocks:
+const contextBlocks = top
+  .map((r, i) => `[${i + 1}] URL: ${r.url}\nTITLE: ${decodeHTMLEntities(r.title || "")}\nTEXT: ${String(r.content||"").slice(0,1400)}`)
+  .join("\n\n");
 
 
 
