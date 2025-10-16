@@ -1,4 +1,4 @@
-﻿// /api/ping.cjs  — pure CJS, zero deps
+﻿// /api/ping.js — ZERO imports
 module.exports = (req, res) => {
   try {
     res.status(200).send("ok");
