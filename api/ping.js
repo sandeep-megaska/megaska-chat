@@ -1,15 +1,9 @@
-﻿// /api/ping.js  (CommonJS)
+﻿// /api/ping.js  (ultra-minimal)
 module.exports = (req, res) => {
-  const origin = req.headers.origin || "https://megaska.com";
-  res.setHeader("Access-Control-Allow-Origin", origin);
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
-  res.setHeader("Vary", "Origin");
-
-  if (req.method === "OPTIONS") {
-    res.status(204).end();
-    return;
+  try {
+    res.status(200).send("ok");
+  } catch (e) {
+    console.error("PING_FATAL:", e);
+    res.status(500).send("fail");
   }
-
-  res.status(200).json({ ok: true, ts: Date.now() });
 };
